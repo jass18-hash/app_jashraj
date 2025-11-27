@@ -63,13 +63,14 @@ This application uses a Random Forest model to predict whether a detection is **
 It also explains which features matter and how changing values affects the prediction.
 """)
 
-# Tabs
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "Prediction",
     "Feature Importance and Sensitivity",
     "Model Performance",
-    "Data Preview"
+    "Dataset Preview",
+    "EDA"
 ])
+
 
 
 # Tab 1 – Prediction
@@ -217,3 +218,55 @@ with tab4:
     st.subheader("Dataset preview")
     st.dataframe(raw_data.head(50))
     st.write("This shows a small sample of the dataset used to train the model.")
+
+# Tab 5: Exploratory Data Analysis (EDA)
+with tab5:
+    st.subheader("Exploratory Data Analysis")
+
+    st.write("This section shows simple visualizations to understand the dataset.")
+
+    # Let user choose between EDA options
+    option = st.selectbox(
+        "Choose what you want to explore:",
+        ["Summary Statistics", "Histogram", "Boxplot", "Correlation Heatmap"]
+    )
+
+    # Summary statistics
+    if option == "Summary Statistics":
+        st.write("Basic numeric summary of the dataset.")
+        st.dataframe(raw_data.describe())
+
+    # Histogram (single plot)
+    if option == "Histogram":
+        st.write("Histogram shows how values are spread for one feature.")
+        col = st.selectbox("Select a feature:", feature_cols)
+
+        fig, ax = plt.subplots(figsize=(7, 4))
+        sns.histplot(raw_data[col], kde=False, bins=30, color="#4B0014", ax=ax)
+        ax.set_title(f"Histogram of {col}")
+        ax.set_xlabel(col)
+        st.pyplot(fig)
+
+    # Boxplot
+    if option == "Boxplot":
+        st.write("Boxplot shows outliers and distribution shape.")
+        col = st.selectbox("Select a feature:", feature_cols)
+
+        fig, ax = plt.subplots(figsize=(7, 4))
+        sns.boxplot(x=raw_data[col], color="#4B0014", ax=ax)
+        ax.set_title(f"Boxplot of {col}")
+        st.pyplot(fig)
+
+    # Correlation heatmap
+    if option == "Correlation Heatmap":
+        st.write("Shows how features are related to each other.")
+        numeric_cols = feature_cols + ["valid"]
+
+        fig, ax = plt.subplots(figsize=(8, 5))
+        sns.heatmap(raw_data[numeric_cols].corr(),
+                    cmap="coolwarm",
+                    annot=False,
+                    ax=ax)
+        ax.set_title("Correlation Heatmap")
+        st.pyplot(fig)
+
