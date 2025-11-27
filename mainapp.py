@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import shap
 import matplotlib.pyplot as plt
 import seaborn as sns
 
@@ -11,10 +10,11 @@ from sklearn.metrics import (
     accuracy_score, precision_score, recall_score, f1_score
 )
 
-# Page setup
 st.set_page_config(page_title="Bird Observatory – XAI App", layout="wide")
 
+# -------------------------
 # Load data
+# -------------------------
 @st.cache_data
 def load_data():
     df = pd.read_excel("F&E_full_dataset.xlsx")
@@ -38,53 +38,52 @@ def load_data():
 
 X, y, feature_cols, raw_data = load_data()
 
-# Split data
+# Split dataset
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.25, stratify=y, random_state=42
 )
 
-# Final tuned Random Forest
+# Final tuned RF
 rf = RandomForestClassifier(
     n_estimators=120, max_depth=12, random_state=42
 )
 rf.fit(X_train, y_train)
 
-# App Title
-st.title("📡 Bird Observatory – ML Model With XAI")
-st.write("This app explains how the ML model predicts valid detections using Explainable AI (XAI).")
+# Page title
+st.title("📡 Bird Observatory – Machine Learning with Explainability")
+st.write("This app shows predictions and explains model decision factors using simple XAI.")
 
 # Tabs
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4 = st.tabs([
     "🔮 Prediction",
-    "📊 Feature Importance",
-    "🧠 SHAP (Simple)",
+    "📊 Feature Importance + Sensitivity",
     "📘 Model Performance",
-    "📄 Data Preview"
+    "📄 Dataset Preview"
 ])
 
-# -----------------------------------------------------------
-# Tab 1 – Prediction with Confidence
-# -----------------------------------------------------------
+
+# ============================================================
+# TAB 1 — Prediction with Confidence
+# ============================================================
 with tab1:
-    st.subheader("Make a Prediction")
+    st.subheader("Enter feature values to get prediction")
 
     inputs = {}
     for col in feature_cols:
-        val = st.number_input(
+        inputs[col] = st.number_input(
             f"{col}", 
             float(X[col].min()), 
             float(X[col].max()), 
             float(X[col].median())
         )
-        inputs[col] = val
 
-    input_df = pd.DataFrame([inputs])
+    df_input = pd.DataFrame([inputs])
 
     if st.button("Predict"):
-        prob = rf.predict_proba(input_df)[0][1]
-        pred = rf.predict(input_df)[0]
+        prob = rf.predict_proba(df_input)[0][1]
+        pred = rf.predict(df_input)[0]
 
-        st.write(f"### Prediction: **{'Valid' if pred == 1 else 'Invalid'}**")
+        st.write(f"### Prediction: **{'Valid' if pred==1 else 'Invalid'}**")
         st.write(f"### Confidence: **{prob:.3f}**")
 
         low = max(prob - 0.10, 0)
@@ -94,60 +93,59 @@ with tab1:
         st.progress(prob)
         st.write(f"Lower: **{low:.2f}** | Upper: **{high:.2f}**")
 
-        st.write("This range gives the client an idea of uncertainty in the prediction.")
+        st.info("This confidence range shows prediction uncertainty.")
 
-# -----------------------------------------------------------
-# Tab 2 – Feature Importance
-# -----------------------------------------------------------
+
+# ============================================================
+# TAB 2 — Feature Importance + Interactive Sensitivity
+# ============================================================
 with tab2:
-    st.subheader("Feature Importance")
+    st.subheader("Feature Importance (What Drives the Model)")
 
     fig, ax = plt.subplots(figsize=(7,4))
-    sns.barplot(x=rf.feature_importances_, y=feature_cols, ax=ax)
-    plt.title("Feature Importance")
+    sns.barplot(x=rf.feature_importances_, y=feature_cols)
+    plt.title("Random Forest Feature Importance")
     st.pyplot(fig)
 
     st.write("""
-    **Explanation:**  
-    This chart shows which features affect the model the most.  
-    Higher bars mean stronger impact on predicting whether a detection is valid.
+    Higher bars mean the model relies more on that feature  
+    to decide whether a detection is valid or invalid.
     """)
 
-# -----------------------------------------------------------
-# Tab 3 – SHAP Simple Bar Plot
-# -----------------------------------------------------------
+    st.markdown("---")
+    st.subheader("Try Changing One Feature (Sensitivity Test)")
+
+    feature_to_change = st.selectbox("Select a feature:", feature_cols)
+
+    test_row = X_test.sample(1, random_state=42).copy()
+
+    original_value = test_row.iloc[0][feature_to_change]
+
+    new_value = st.slider(
+        f"Change value for {feature_to_change}",
+        float(X[feature_to_change].min()),
+        float(X[feature_to_change].max()),
+        float(original_value)
+    )
+
+    test_row[feature_to_change] = new_value
+
+    new_prob = rf.predict_proba(test_row)[0][1]
+
+    st.write(f"### New Predicted Probability: **{new_prob:.3f}**")
+
+    st.write("""
+    This helps clients understand:  
+    *“If we change this value, how does the prediction move?”*
+    """)
+
+# ============================================================
+# TAB 3 — Model Performance
+# ============================================================
 with tab3:
-    st.subheader("SHAP Value Explanation (Simple Version)")
-
-    st.write("SHAP explains how each feature contributes to predictions.")
-
-    # Small sample for speed
-    X_small = X_test.sample(20, random_state=42).values
-
-    # SHAP TreeExplainer
-    explainer = shap.TreeExplainer(rf)
-    shap_values = explainer.shap_values(X_small)
-
-    # SHAP bar plot (works 100% of the time)
-    fig, ax = plt.subplots(figsize=(7,5))
-    shap.plots.bar(shap_values[1], max_display=7)
-    st.pyplot(fig)
-
-    st.write("""
-    **SHAP Explanation:**  
-    This bar chart shows the average impact of each feature.  
-    Positive values push predictions toward **Valid**,  
-    negative values push toward **Invalid**.
-    """)
-
-# -----------------------------------------------------------
-# Tab 4 – Model Performance
-# -----------------------------------------------------------
-with tab4:
-    st.subheader("Model Performance on Test Data")
+    st.subheader("Model Performance Summary")
 
     preds = rf.predict(X_test)
-
     acc = accuracy_score(y_test, preds)
     prec = precision_score(y_test, preds)
     rec = recall_score(y_test, preds)
@@ -158,12 +156,11 @@ with tab4:
     st.metric("Recall", f"{rec:.3f}")
     st.metric("F1 Score", f"{f1:.3f}")
 
-    st.write("These metrics help validate how well the model performs for the client.")
+    st.write("These scores show how well the model performed on test data.")
 
-# -----------------------------------------------------------
-# Tab 5 – Show Raw Data
-# -----------------------------------------------------------
-with tab5:
-    st.subheader("Dataset Preview")
+# ============================================================
+# TAB 4 — Dataset Preview
+# ============================================================
+with tab4:
+    st.subheader("Dataset Sample")
     st.dataframe(raw_data.head(50))
-    st.write("This helps clients verify where the model's inputs come from.")
