@@ -259,14 +259,36 @@ with tab5:
 
     # Correlation heatmap
     if option == "Correlation Heatmap":
-        st.write("Shows how features are related to each other.")
-        numeric_cols = feature_cols + ["valid"]
-
-        fig, ax = plt.subplots(figsize=(8, 5))
-        sns.heatmap(raw_data[numeric_cols].corr(),
-                    cmap="coolwarm",
-                    annot=False,
-                    ax=ax)
-        ax.set_title("Correlation Heatmap")
+        st.write("This heatmap shows how different features are related to each other.")
+    
+        # Choose only useful numeric columns (ignore IDs)
+        corr_features = [
+            "sig", "sigsd", "snr",
+            "runLen",
+            "avg_sig_per_tag", "avg_snr_per_tag",
+            "detections_per_tag",
+            "valid"
+        ]
+    
+        # Make sure the features exist in the data
+        corr_features = [f for f in corr_features if f in raw_data.columns]
+    
+        df_corr = raw_data[corr_features].corr()
+    
+        # Plot heatmap
+        fig, ax = plt.subplots(figsize=(10, 6))
+        sns.heatmap(
+            df_corr,
+            annot=True,          # show numbers
+            fmt=".2f",
+            cmap="coolwarm",
+            linewidths=0.5,
+            square=True,
+            ax=ax
+        )
+    
+        ax.set_title("Correlation Heatmap", fontsize=14)
+        plt.xticks(rotation=45, ha='right', fontsize=9)
+        plt.yticks(fontsize=9)
+    
         st.pyplot(fig)
-
