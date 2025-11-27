@@ -4,75 +4,78 @@ import numpy as np
 import shap
 import matplotlib.pyplot as plt
 import seaborn as sns
+
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from sklearn.metrics import (
+    accuracy_score, precision_score, recall_score, f1_score
+)
 
-st.set_page_config(page_title="Bird Observatory XAI App", layout="wide")
+# Page setup
+st.set_page_config(page_title="Bird Observatory – XAI App", layout="wide")
 
-# -----------------------------
-# Load & Prepare Data
-# -----------------------------
+# Load data
 @st.cache_data
 def load_data():
     df = pd.read_excel("F&E_full_dataset.xlsx")
 
-    drop_cols = ["Unnamed: 0", "hitID", "runID", "batchID", "ts",
-                 "tsCorrected", "DATE", "TIME", "port", "antBearing"]
-
-    df.drop(columns=[c for c in drop_cols if c in df.columns],
+    remove_cols = ["Unnamed: 0", "hitID", "runID", "batchID", "ts",
+                   "tsCorrected", "DATE", "TIME", "port", "antBearing"]
+    df.drop(columns=[c for c in remove_cols if c in df.columns],
             inplace=True, errors="ignore")
 
     df["valid"] = (df["motusFilter"] == 1).astype(int)
 
-    feature_cols = [
+    features = [
         "sig", "sigsd", "snr", "runLen",
         "avg_sig_per_tag", "avg_snr_per_tag", "detections_per_tag"
     ]
 
-    X = df[feature_cols].fillna(df[feature_cols].median())
+    X = df[features].fillna(df[features].median())
     y = df["valid"]
-    return X, y, feature_cols, df
 
-X, y, feature_cols, df_raw = load_data()
+    return X, y, features, df
 
+X, y, feature_cols, raw_data = load_data()
+
+# Split data
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.25, stratify=y, random_state=42
 )
 
-# -----------------------------
-# Train Final Random Forest
-# -----------------------------
+# Final tuned Random Forest
 rf = RandomForestClassifier(
     n_estimators=120, max_depth=12, random_state=42
 )
 rf.fit(X_train, y_train)
 
-# -----------------------------
 # App Title
-# -----------------------------
-st.title("📡 Bird Observatory – ML Insights with Explainable AI (XAI)")
-st.write("This app helps explain how the Random Forest model makes predictions.")
+st.title("📡 Bird Observatory – ML Model With XAI")
+st.write("This app explains how the ML model predicts valid detections using Explainable AI (XAI).")
 
-# ======================================================
-# TABS FOR MODEL OUTPUTS + XAI
-# ======================================================
-tab1, tab2, tab3, tab4 = st.tabs([
-    "🔮 Make Prediction",
+# Tabs
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "🔮 Prediction",
     "📊 Feature Importance",
-    "🧠 SHAP Values",
-    "📘 Model Performance"
+    "🧠 SHAP (Simple)",
+    "📘 Model Performance",
+    "📄 Data Preview"
 ])
 
-# ======================================================
-# TAB 1 — PREDICTION + CONFIDENCE
-# ======================================================
+# -----------------------------------------------------------
+# Tab 1 – Prediction with Confidence
+# -----------------------------------------------------------
 with tab1:
-    st.subheader("Enter feature values to predict validity")
+    st.subheader("Make a Prediction")
 
     inputs = {}
     for col in feature_cols:
-        val = st.number_input(f"{col}", float(X[col].min()), float(X[col].max()), float(X[col].median()))
+        val = st.number_input(
+            f"{col}", 
+            float(X[col].min()), 
+            float(X[col].max()), 
+            float(X[col].median())
+        )
         inputs[col] = val
 
     input_df = pd.DataFrame([inputs])
@@ -84,77 +87,83 @@ with tab1:
         st.write(f"### Prediction: **{'Valid' if pred == 1 else 'Invalid'}**")
         st.write(f"### Confidence: **{prob:.3f}**")
 
-        # Simple “prediction interval”
-        low_bound = max(prob - 0.10, 0)
-        high_bound = min(prob + 0.10, 1)
+        low = max(prob - 0.10, 0)
+        high = min(prob + 0.10, 1)
 
-        st.write("#### Confidence Range (±10%)")
+        st.write("### Confidence Range (±10%)")
         st.progress(prob)
-        st.write(f"Lower: {low_bound:.2f}   |   Upper: {high_bound:.2f}")
+        st.write(f"Lower: **{low:.2f}** | Upper: **{high:.2f}**")
 
+        st.write("This range gives the client an idea of uncertainty in the prediction.")
 
-# ======================================================
-# TAB 2 — FEATURE IMPORTANCE
-# ======================================================
+# -----------------------------------------------------------
+# Tab 2 – Feature Importance
+# -----------------------------------------------------------
 with tab2:
     st.subheader("Feature Importance")
 
     fig, ax = plt.subplots(figsize=(7,4))
     sns.barplot(x=rf.feature_importances_, y=feature_cols, ax=ax)
-    plt.title("Random Forest Feature Importance")
+    plt.title("Feature Importance")
     st.pyplot(fig)
 
     st.write("""
-    **How this helps the client:**  
-    This chart explains *which factors influence predictions the most.*  
-    Higher bars = features that strongly impact whether a detection is valid.
+    **Explanation:**  
+    This chart shows which features affect the model the most.  
+    Higher bars mean stronger impact on predicting whether a detection is valid.
     """)
 
-
-# ======================================================
-# TAB 3 — SIMPLE SHAP EXPLANATIONS
-# ======================================================
+# -----------------------------------------------------------
+# Tab 3 – SHAP Simple Bar Plot
+# -----------------------------------------------------------
 with tab3:
-    st.subheader("SHAP Value Explanation")
+    st.subheader("SHAP Value Explanation (Simple Version)")
 
-    st.write("SHAP helps show how each feature pushes the prediction up or down.")
+    st.write("SHAP explains how each feature contributes to predictions.")
 
     # Small sample for speed
     X_small = X_test.sample(20, random_state=42).values
 
+    # SHAP TreeExplainer
     explainer = shap.TreeExplainer(rf)
     shap_values = explainer.shap_values(X_small)
 
+    # SHAP bar plot (works 100% of the time)
     fig, ax = plt.subplots(figsize=(7,5))
-    shap.summary_plot(shap_values[1], X_small, feature_names=feature_cols, show=False)
+    shap.plots.bar(shap_values[1], max_display=7)
     st.pyplot(fig)
 
     st.write("""
-    **How this helps the client:**  
-    SHAP values show *why* the model predicted "valid" or "invalid".  
-    Red = pushes prediction toward valid  
-    Blue = pushes prediction toward invalid
+    **SHAP Explanation:**  
+    This bar chart shows the average impact of each feature.  
+    Positive values push predictions toward **Valid**,  
+    negative values push toward **Invalid**.
     """)
 
-
-# ======================================================
-# TAB 4 — MODEL PERFORMANCE
-# ======================================================
+# -----------------------------------------------------------
+# Tab 4 – Model Performance
+# -----------------------------------------------------------
 with tab4:
-    st.subheader("Model Performance")
+    st.subheader("Model Performance on Test Data")
 
     preds = rf.predict(X_test)
+
     acc = accuracy_score(y_test, preds)
     prec = precision_score(y_test, preds)
     rec = recall_score(y_test, preds)
     f1 = f1_score(y_test, preds)
 
-    st.write(f"Accuracy: **{acc:.3f}**")
-    st.write(f"Precision: **{prec:.3f}**")
-    st.write(f"Recall: **{rec:.3f}**")
-    st.write(f"F1 Score: **{f1:.3f}**")
+    st.metric("Accuracy", f"{acc:.3f}")
+    st.metric("Precision", f"{prec:.3f}")
+    st.metric("Recall", f"{rec:.3f}")
+    st.metric("F1 Score", f"{f1:.3f}")
 
-    st.write("""
-    These metrics help verify that the model performs well  
-    and gives confidence in using predictions for decision-making.
-    """)
+    st.write("These metrics help validate how well the model performs for the client.")
+
+# -----------------------------------------------------------
+# Tab 5 – Show Raw Data
+# -----------------------------------------------------------
+with tab5:
+    st.subheader("Dataset Preview")
+    st.dataframe(raw_data.head(50))
+    st.write("This helps clients verify where the model's inputs come from.")
