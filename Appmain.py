@@ -296,10 +296,8 @@ with tab5:
         st.pyplot(fig)
 
 # TAB 6 — RAG Chatbot (Bird Dataset)
-
 with tab6:
     st.subheader("Bird Dataset Chatbot")
-
     st.write("Ask anything about the bird detections dataset.")
 
     import pandas as pd
@@ -308,137 +306,122 @@ with tab6:
 
     @st.cache_data
     def load_bird_data():
-        df_birds = pd.read_excel("F&E_full_dataset.xlsx")
+        df = pd.read_excel("F&E_full_dataset.xlsx")
 
-        # Drop useless columns
         drop_cols = ["Unnamed: 0", "hitID", "runID", "batchID", "ts",
                      "tsCorrected", "DATE", "TIME", "port", "antBearing"]
-        df_birds = df_birds.drop(columns=[c for c in drop_cols if c in df_birds.columns],
-                                 errors="ignore")
+        df = df.drop(columns=[c for c in drop_cols if c in df.columns], errors="ignore")
 
-        return df_birds
+        return df
 
     df_birds = load_bird_data()
 
+    # Simple metadata
     col_names = list(df_birds.columns)
     num_cols = len(col_names)
     num_rows = len(df_birds)
 
+    # --------------------------
+    # DOCUMENT 1: Dataset Summary
+    # --------------------------
     dataset_summary_doc = (
-        f"The bird dataset contains {num_rows} rows and {num_cols} columns.\n"
-        "Here are the column names:\n"
-        + ", ".join(col_names)
+        f"The bird detection dataset has {num_rows} rows and {num_cols} columns.\n"
+        f"The column names are:\n{', '.join(col_names)}.\n"
+        "The dataset is used to determine whether a detection is valid or noise."
     )
 
     # --------------------------
-    # DOCUMENT 2: Column Descriptions
+    # DOCUMENT 2: Column Explanation
     # --------------------------
     column_explanations = {
-        "sig": "Signal strength of the detection.",
-        "sigsd": "Standard deviation of signal strength.",
-        "noise": "Noise level of the signal.",
-        "snr": "Signal-to-noise ratio.",
-        "freq": "Frequency of detection.",
-        "freqsd": "Standard deviation of frequency.",
-        "slop": "Slope of the signal.",
-        "burstSlop": "Burst slope measurement.",
-        "runLen": "Run length of detection.",
-        "avg_sig_per_tag": "Average signal per tag for the bird.",
-        "avg_snr_per_tag": "Average signal-to-noise per tag.",
-        "detections_per_tag": "How many detections belong to that tag.",
+        "sig": "Signal strength.",
+        "sigsd": "Signal strength standard deviation.",
+        "noise": "Noise level.",
+        "snr": "Signal to noise ratio.",
+        "freq": "Frequency.",
+        "freqsd": "Frequency standard deviation.",
+        "slop": "Slope value.",
+        "burstSlop": "Burst slope reading.",
+        "runLen": "Run length of the detection.",
+        "avg_sig_per_tag": "Average signal per bird tag.",
+        "avg_snr_per_tag": "Average SNR per tag.",
+        "detections_per_tag": "Total detections for that tag.",
         "motusFilter": "1 = valid detection, 0 = noise."
     }
 
     descriptions_doc = "Column descriptions:\n"
-    for col, desc in column_explanations.items():
-        if col in df_birds.columns:
-            descriptions_doc += f"- {col}: {desc}\n"
+    for col in col_names:
+        if col in column_explanations:
+            descriptions_doc += f"- {col}: {column_explanations[col]}\n"
 
-    narrative_doc = "Here are sample detection rows:\n"
-    sample_df = df_birds.head(10)
+    # --------------------------
+    # DOCUMENT 3: Sample Narrative
+    # --------------------------
+    narrative = "Here are sample detections:\n"
+    sample_df = df_birds.head(12)
 
     for idx, row in sample_df.iterrows():
-        narrative_doc += (
+        narrative += (
             f"Detection {idx}: sig={row['sig']}, snr={row['snr']}, runLen={row['runLen']}, "
             f"avg_snr_per_tag={row['avg_snr_per_tag']}, detections_per_tag={row['detections_per_tag']}, "
-            f"validity={row['motusFilter']}.\n"
-        )
-    bird_narrative = "Here is a summary of bird detections:\n"
-
-    # Use first 200 rows for speed
-    sample_df = df_birds.head(20)
-
-    for idx, row in sample_df.iterrows():
-        bird_narrative += (
-            f"Detection: sig={row['sig']}, snr={row['snr']}, runLen={row['runLen']}, "
-            f"avg_snr_per_tag={row['avg_snr_per_tag']}, detections_per_tag={row['detections_per_tag']}. "
-            f"Validity label: {row['motusFilter']}.\n"
+            f"motusFilter={row['motusFilter']}.\n"
         )
 
-    bird_explanation = (
-        "This dataset contains bird detection events including signal strength (sig), "
-        "signal-to-noise ratio (snr), run length (runLen), and tagging-based averages. "
-        "The 'motusFilter' column is the target label where 1 = valid detection and 0 = noise."
-    )
-
+    # --------------------------
+    # Combine all documents
+    # --------------------------
     documents = {
-        "doc_dataset_summary": bird_explanation,
-        "doc_narrative": bird_narrative
+        "dataset_summary": dataset_summary_doc,
+        "column_descriptions": descriptions_doc,
+        "sample_narrative": narrative
     }
 
-    embedder = SentenceTransformer('all-MiniLM-L12-v2')
+    # --------------------------
+    # Embeddings
+    # --------------------------
+    embedder = SentenceTransformer('all-MiniLM-L6-v2')
     doc_embeddings = {
         doc_id: embedder.encode(text, convert_to_tensor=True)
         for doc_id, text in documents.items()
     }
 
-    # Retrieval function
     def retrieve_context(query, top_k=2):
-        query_embedding = embedder.encode(query, convert_to_tensor=True)
+        query_emb = embedder.encode(query, convert_to_tensor=True)
         scores = {}
 
         for doc_id, emb in doc_embeddings.items():
-            score = util.pytorch_cos_sim(query_embedding, emb).item()
+            score = util.pytorch_cos_sim(query_emb, emb).item()
             scores[doc_id] = score
 
-        sorted_docs = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-        top_doc_ids = [doc_id for doc_id, score in sorted_docs[:top_k]]
-
-        # Join retrieved documents
-        return "\n\n".join(documents[doc_id] for doc_id in top_doc_ids)
+        ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+        best_docs = [doc_id for doc_id, score in ranked[:top_k]]
+        return "\n\n".join(documents[doc_id] for doc_id in best_docs)
 
     generator = pipeline("text2text-generation", model="google/flan-t5-small")
 
     def query_llm(query, context):
         prompt = (
-            "Below is information about bird detection data. "
-            "Use the context to answer the question clearly.\n\n"
+            "You are an assistant for analyzing bird detection data. "
+            "Use the context to answer clearly.\n\n"
             f"Context:\n{context}\n\n"
-            f"User Query: {query}\n\n"
+            f"Question: {query}\n\n"
             "Answer in simple words:\n"
         )
 
-        outputs = generator(prompt, max_new_tokens=200, do_sample=True, temperature=0.7)
-        raw_output = outputs[0]['generated_text']
-
-        # Remove prompt repetition if happens
-        if raw_output.startswith(prompt):
-            raw_output = raw_output[len(prompt):].strip()
-
-        return raw_output.strip()
+        output = generator(prompt, max_new_tokens=150, do_sample=True, temperature=0.7)
+        return output[0]["generated_text"].strip()
 
     def rag_chatbot(query):
         context = retrieve_context(query, top_k=2)
-        answer = query_llm(query, context)
-        return answer
+        return query_llm(query, context)
+
+    # UI
     user_query = st.text_input("Type your question here:")
 
     if st.button("Ask the Chatbot"):
         if user_query.strip() == "":
             st.warning("Please type a question.")
         else:
-            with st.spinner("Analyzing dataset…"):
+            with st.spinner("Thinking..."):
                 reply = rag_chatbot(user_query)
-
-            st.write("Chatbot Response:")
             st.success(reply)
