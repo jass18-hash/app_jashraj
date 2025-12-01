@@ -7,23 +7,23 @@ import seaborn as sns
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 
+# Page config
 st.set_page_config(page_title="Bird Observatory – ML XAI App", layout="wide")
 
-# Load data
+# Load Data
 @st.cache_data
 def load_data():
     df = pd.read_excel("F&E_full_dataset.xlsx")
 
-    # Remove columns we do not need
-    remove_cols = ["Unnamed: 0", "hitID", "runID", "batchID", "ts",
-                   "tsCorrected", "DATE", "TIME", "port", "antBearing"]
+    remove_cols = [
+        "Unnamed: 0", "hitID", "runID", "batchID", "ts",
+        "tsCorrected", "DATE", "TIME", "port", "antBearing"
+    ]
     df.drop(columns=[c for c in remove_cols if c in df.columns],
             inplace=True, errors="ignore")
 
-    # Target column
     df["valid"] = (df["motusFilter"] == 1).astype(int)
 
-    # Features used by the model
     features = [
         "sig", "sigsd", "snr", "runLen",
         "avg_sig_per_tag", "avg_snr_per_tag", "detections_per_tag"
@@ -34,14 +34,15 @@ def load_data():
 
     return X, y, features, df
 
+
 X, y, feature_cols, raw_data = load_data()
 
-# Train / test split
+# Train-test split
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.25, stratify=y, random_state=42
 )
 
-# Train final Random Forest model
+# Final Random Forest model
 rf = RandomForestClassifier(
     n_estimators=120,
     max_depth=12,
@@ -49,7 +50,7 @@ rf = RandomForestClassifier(
 )
 rf.fit(X_train, y_train)
 
-# App title and problem statement
+# APP TITLE
 st.title("Bird Observatory – Machine Learning with Explainability")
 
 st.write("Problem statement:")
@@ -59,39 +60,34 @@ st.write(
 )
 
 st.write("""
-This application uses a Random Forest model to predict whether a detection is **Valid** or **Noise**.  
+This application uses a Random Forest model to predict whether a detection is Valid or Noise.
 It also explains which features matter and how changing values affects the prediction.
 """)
 
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+# Tabs
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "Prediction",
     "Feature Importance and Sensitivity",
     "Model Performance",
     "Dataset Preview",
     "EDA",
-    "Chatbot",
-    "Future Prediction",
-    "Business Impact"
+    "Chatbot"
 ])
 
-
-
-
-
-# Tab 1 – Prediction
+# TAB 1 — Prediction
 with tab1:
     st.subheader("Make a prediction")
 
     st.write("""
-    How this prediction works:
+    How prediction works:
     - The model outputs a probability between 0 and 1.
-    - If the probability is closer to 1, the detection is more likely **Valid**.
-    - If it is closer to 0, it is more likely **Noise**.
-    - The confidence range (lower and upper) shows a simple ±8% band around the prediction 
-      to give an idea of uncertainty.
+    - Values closer to 1 = more likely Valid.
+    - Values closer to 0 = more likely Noise.
+    - Confidence range is a simple ±8% band.
     """)
 
     user_inputs = {}
+
     for col in feature_cols:
         user_inputs[col] = st.number_input(
             col,
@@ -109,157 +105,123 @@ with tab1:
         st.write(f"Result: **{'Valid (1)' if pred == 1 else 'Noise (0)'}**")
         st.write(f"Confidence score: **{prob:.2f}**")
 
-        # Simple confidence range
         low = max(prob - 0.08, 0.0)
         high = min(prob + 0.08, 1.0)
-
         st.write(f"Confidence range: **{low:.2f} to {high:.2f}**")
+
         st.progress(float(prob))
 
         st.write("""
         Interpretation:
-        - The confidence score is how strongly the model believes this detection is valid.
-        - The range shows a realistic variation around the score instead of a single fixed point.
+        The confidence score shows how strongly the model believes the detection
+        is valid. The range gives a small uncertainty window.
         """)
 
-
-# Tab 2 – Feature importance and sensitivity
+# TAB 2 — Feature Importance and Sensitivity
 with tab2:
     st.subheader("Feature importance")
 
     fig, ax = plt.subplots(figsize=(7, 4))
     sns.barplot(x=rf.feature_importances_, y=feature_cols, ax=ax)
-    ax.set_xlabel("Importance")
-    ax.set_ylabel("Feature")
     ax.set_title("Random Forest feature importance")
     st.pyplot(fig)
 
-    st.write("""
-    Features with higher importance values have a stronger influence 
-    on whether the model predicts a detection as valid or noise.
-    """)
-
     st.markdown("---")
-    st.subheader("Sensitivity test (change one feature and see the effect)")
 
-    # Choose a feature, default to most important one
+    st.subheader("Sensitivity test (change one feature)")
     importances = rf.feature_importances_
     default_index = int(np.argmax(importances))
+
     selected_feature = st.selectbox(
-        "Choose a feature to adjust:", feature_cols, index=default_index
+        "Choose a feature to adjust:",
+        feature_cols,
+        index=default_index
     )
 
-    # Use a simple baseline example (median of all features)
     baseline = X.median().to_frame().T
     baseline_prob = rf.predict_proba(baseline)[0][1]
 
-    # Slider range based on 1st to 99th percentile to avoid extreme outliers
     min_val = float(X[selected_feature].quantile(0.01))
     max_val = float(X[selected_feature].quantile(0.99))
     mid_val = float(baseline[selected_feature].iloc[0])
 
     new_val = st.slider(
-        f"Adjust value for {selected_feature}",
-        min_val,
-        max_val,
-        mid_val
+        f"Adjust {selected_feature}",
+        min_val, max_val, mid_val
     )
 
-    changed_example = baseline.copy()
-    changed_example[selected_feature] = new_val
-    changed_prob = rf.predict_proba(changed_example)[0][1]
+    changed = baseline.copy()
+    changed[selected_feature] = new_val
+    changed_prob = rf.predict_proba(changed)[0][1]
 
-    st.write(f"Baseline probability (median values): **{baseline_prob:.2f}**")
-    st.write(f"New probability after change: **{changed_prob:.2f}**")
+    st.write(f"Baseline probability: **{baseline_prob:.2f}**")
+    st.write(f"New probability: **{changed_prob:.2f}**")
 
-    # Extra: show full curve of probability vs feature value
     values = np.linspace(min_val, max_val, 30)
     probs = []
+
     for v in values:
         temp = baseline.copy()
         temp[selected_feature] = v
-        p = rf.predict_proba(temp)[0][1]
-        probs.append(p)
+        probs.append(rf.predict_proba(temp)[0][1])
 
-    curve_fig, curve_ax = plt.subplots(figsize=(7, 4))
-    curve_ax.plot(values, probs, marker="o")
-    curve_ax.axvline(new_val, color="red", linestyle="--", label="Current value")
-    curve_ax.set_xlabel(selected_feature)
-    curve_ax.set_ylabel("Predicted probability of valid (1)")
-    curve_ax.set_title(f"Effect of {selected_feature} on prediction")
-    curve_ax.legend()
-    st.pyplot(curve_fig)
+    fig2, ax2 = plt.subplots(figsize=(7, 4))
+    ax2.plot(values, probs, marker="o")
+    ax2.axvline(new_val, color="red", linestyle="--")
+    ax2.set_title(f"Effect of {selected_feature}")
+    ax2.set_xlabel(selected_feature)
+    ax2.set_ylabel("Predicted probability")
+    st.pyplot(fig2)
 
-    st.write("""
-    This section shows how changing a single feature changes the predicted probability.  
-    The line chart helps see the overall trend across the full range of that feature.
-    """)
-
-
-# Tab 3 – Model performance
+# TAB 3 — Model Performance
 with tab3:
     st.subheader("Model performance (summary)")
 
-    # these are written by us bcoz we were facing problems so we just found the values in google colab file from codes and then pasted here.
     accuracy = 0.97
     precision = 0.92
     recall = 0.94
-    f1_score_value = 0.93
+    f1_value = 0.93
 
     st.write(f"Accuracy: **{accuracy:.2f}**")
     st.write(f"Precision: **{precision:.2f}**")
     st.write(f"Recall: **{recall:.2f}**")
-    st.write(f"F1 score: **{f1_score_value:.2f}**")
+    st.write(f"F1 Score: **{f1_value:.2f}**")
 
     st.write("""
-    These values give a high-level idea of how well the model performs on the test data.  
-    They are shown in a simple way to help non-technical users understand that 
-    the model is performing reliably.
+    These values give a simple overview of how well the model performs.
     """)
 
-
-# Tab 4 – Data preview
+# TAB 4 — Dataset Preview
 with tab4:
     st.subheader("Dataset preview")
     st.dataframe(raw_data.head(50))
-    st.write("This shows a small sample of the dataset used to train the model.")
 
-# Tab 5 – Exploratory Data Analysis (EDA)
+# TAB 5 — EDA
 with tab5:
     st.subheader("Exploratory Data Analysis")
 
-    st.write("This section shows simple visualizations to understand the dataset.")
-
     option = st.selectbox(
-        "Choose what you want to explore:",
-        ["Summary Statistics", "Histogram", "Boxplot", "Correlation Heatmap",
-         "Outlier Explorer", "3D Scatter Plot"]
+        "Choose EDA view:",
+        ["Summary Statistics", "Histogram", "Boxplot", "Correlation Heatmap"]
     )
 
-    # Summary statistics
     if option == "Summary Statistics":
-        st.write("Basic numeric summary of the dataset.")
         st.dataframe(raw_data.describe())
 
-    # Histogram
     if option == "Histogram":
-        col = st.selectbox("Choose a feature:", feature_cols)
+        col = st.selectbox("Select a feature:", feature_cols)
 
         fig, ax = plt.subplots(figsize=(7, 4))
-        sns.histplot(raw_data[col], kde=False, bins=30, color="#4B0014", ax=ax)
-        ax.set_title(f"Histogram of {col}")
+        sns.histplot(raw_data[col], bins=30, color="#4B0014", ax=ax)
         st.pyplot(fig)
 
-    # Boxplot
     if option == "Boxplot":
-        col = st.selectbox("Choose a feature:", feature_cols)
+        col = st.selectbox("Select a feature:", feature_cols)
 
         fig, ax = plt.subplots(figsize=(7, 4))
         sns.boxplot(x=raw_data[col], color="#4B0014", ax=ax)
-        ax.set_title(f"Boxplot of {col}")
         st.pyplot(fig)
 
-    # Correlation heatmap
     if option == "Correlation Heatmap":
         corr_features = [
             "sig", "sigsd", "snr", "runLen",
@@ -271,136 +233,77 @@ with tab5:
         df_corr = raw_data[corr_features].corr()
 
         fig, ax = plt.subplots(figsize=(10, 6))
-        sns.heatmap(df_corr, annot=True, fmt=".2f",
-                    cmap="coolwarm", square=True, linewidths=0.5, ax=ax)
-        ax.set_title("Correlation Heatmap")
+        sns.heatmap(df_corr, annot=True, cmap="coolwarm", square=True, ax=ax)
         st.pyplot(fig)
 
-    # Outlier Explorer (NEW)
-    if option == "Outlier Explorer":
-        st.write("This shows unusual values that stand out from normal patterns.")
-
-        col = st.selectbox("Choose a feature to check outliers:", feature_cols)
-
-        q1 = raw_data[col].quantile(0.25)
-        q3 = raw_data[col].quantile(0.75)
-        iqr = q3 - q1
-        lower = q1 - 1.5 * iqr
-        upper = q3 + 1.5 * iqr
-
-        outliers = raw_data[(raw_data[col] < lower) | (raw_data[col] > upper)]
-
-        st.write(f"Number of outliers in **{col}**: {len(outliers)}")
-        st.dataframe(outliers.head(20))
-
-        fig, ax = plt.subplots(figsize=(7, 4))
-        sns.boxplot(x=raw_data[col], color="#4B0014", ax=ax)
-        ax.set_title(f"Outlier Check for {col}")
-        st.pyplot(fig)
-
-    # 3D Scatter Plot (NEW)
-    if option == "3D Scatter Plot":
-        st.write("3D visualization of key features.")
-
-        import plotly.express as px
-
-        fig = px.scatter_3d(
-            raw_data,
-            x="sig",
-            y="snr",
-            z="runLen",
-            color="valid",
-            title="3D Scatter Plot (sig, snr, runLen)",
-            color_continuous_scale="RdPu"
-        )
-
-        st.plotly_chart(fig, use_container_width=True)
-
-# TAB 6 — RAG Chatbot 
+# TAB 6 — RAG Chatbot
 with tab6:
     st.subheader("Bird Dataset Chatbot")
-    st.write("Ask anything about the bird detections dataset.")
+    st.write("Ask anything about the dataset.")
 
-    import pandas as pd
     from sentence_transformers import SentenceTransformer, util
     from transformers import pipeline
 
     @st.cache_data
     def load_bird_data():
         df = pd.read_excel("F&E_full_dataset.xlsx")
-
-        drop_cols = ["Unnamed: 0", "hitID", "runID", "batchID", "ts",
-                     "tsCorrected", "DATE", "TIME", "port", "antBearing"]
+        drop_cols = [
+            "Unnamed: 0", "hitID", "runID", "batchID", "ts",
+            "tsCorrected", "DATE", "TIME", "port", "antBearing"
+        ]
         df = df.drop(columns=[c for c in drop_cols if c in df.columns], errors="ignore")
-
         return df
 
     df_birds = load_bird_data()
 
-    # Simple metadata
     col_names = list(df_birds.columns)
     num_cols = len(col_names)
     num_rows = len(df_birds)
 
-    # --------------------------
-    # DOCUMENT 1: Dataset Summary
-    # --------------------------
     dataset_summary_doc = (
-        f"The bird detection dataset has {num_rows} rows and {num_cols} columns.\n"
-        f"The column names are:\n{', '.join(col_names)}.\n"
-        "The dataset is used to determine whether a detection is valid or noise."
+        f"The dataset has {num_rows} rows and {num_cols} columns.\n"
+        f"Column names: {', '.join(col_names)}"
     )
 
-    # --------------------------
-    # DOCUMENT 2: Column Explanation
-    # --------------------------
     column_explanations = {
         "sig": "Signal strength.",
-        "sigsd": "Signal strength standard deviation.",
+        "sigsd": "Signal SD.",
         "noise": "Noise level.",
-        "snr": "Signal to noise ratio.",
+        "snr": "Signal-to-noise ratio.",
         "freq": "Frequency.",
-        "freqsd": "Frequency standard deviation.",
-        "slop": "Slope value.",
-        "burstSlop": "Burst slope reading.",
-        "runLen": "Run length of the detection.",
-        "avg_sig_per_tag": "Average signal per bird tag.",
-        "avg_snr_per_tag": "Average SNR per tag.",
-        "detections_per_tag": "Total detections for that tag.",
-        "motusFilter": "1 = valid detection, 0 = noise."
+        "freqsd": "Frequency SD.",
+        "slop": "Slope.",
+        "burstSlop": "Burst slope.",
+        "runLen": "Run length.",
+        "avg_sig_per_tag": "Avg signal per tag.",
+        "avg_snr_per_tag": "Avg SNR per tag.",
+        "detections_per_tag": "Detections for that tag.",
+        "motusFilter": "1 = valid, 0 = noise."
     }
 
-    descriptions_doc = "Column descriptions:\n"
+    desc_doc = "Column descriptions:\n"
     for col in col_names:
         if col in column_explanations:
-            descriptions_doc += f"- {col}: {column_explanations[col]}\n"
+            desc_doc += f"- {col}: {column_explanations[col]}\n"
 
-    # --------------------------
-    # DOCUMENT 3: Sample Narrative
-    # --------------------------
-    narrative = "Here are sample detections:\n"
+    narrative = "Sample detections:\n"
     sample_df = df_birds.head(12)
 
     for idx, row in sample_df.iterrows():
         narrative += (
-            f"Detection {idx}: sig={row['sig']}, snr={row['snr']}, runLen={row['runLen']}, "
-            f"avg_snr_per_tag={row['avg_snr_per_tag']}, detections_per_tag={row['detections_per_tag']}, "
-            f"motusFilter={row['motusFilter']}.\n"
+            f"Detection {idx}: sig={row['sig']}, snr={row['snr']}, "
+            f"runLen={row['runLen']}, avg_snr={row['avg_snr_per_tag']}, "
+            f"detections={row['detections_per_tag']}, motusFilter={row['motusFilter']}\n"
         )
 
-    # --------------------------
-    # Combine all documents
-    # --------------------------
     documents = {
         "dataset_summary": dataset_summary_doc,
-        "column_descriptions": descriptions_doc,
-        "sample_narrative": narrative
+        "column_descriptions": desc_doc,
+        "narrative": narrative
     }
 
-    # --------------------------
-    # Embeddings
-    # --------------------------
-    embedder = SentenceTransformer('all-MiniLM-L6-v2')
+    embedder = SentenceTransformer("all-MiniLM-L6-v2")
+
     doc_embeddings = {
         doc_id: embedder.encode(text, convert_to_tensor=True)
         for doc_id, text in documents.items()
@@ -411,81 +314,31 @@ with tab6:
         scores = {}
 
         for doc_id, emb in doc_embeddings.items():
-            score = util.pytorch_cos_sim(query_emb, emb).item()
-            scores[doc_id] = score
+            scores[doc_id] = util.pytorch_cos_sim(query_emb, emb).item()
 
         ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
         best_docs = [doc_id for doc_id, score in ranked[:top_k]]
-        return "\n\n".join(documents[doc_id] for doc_id in best_docs)
+
+        return "\n\n".join(documents[d] for d in best_docs)
 
     generator = pipeline("text2text-generation", model="google/flan-t5-small")
 
-    def query_llm(query, context):
+    def answer_chatbot(query):
+        context = retrieve_context(query)
         prompt = (
-            "You are an assistant for analyzing bird detection data. "
-            "Use the context to answer clearly.\n\n"
+            "Answer the question using the context.\n\n"
             f"Context:\n{context}\n\n"
             f"Question: {query}\n\n"
-            "Answer in simple words:\n"
+            "Answer:"
         )
+        out = generator(prompt, max_new_tokens=150)
+        return out[0]["generated_text"].strip()
 
-        output = generator(prompt, max_new_tokens=150, do_sample=True, temperature=0.7)
-        return output[0]["generated_text"].strip()
+    user_query = st.text_input("Type your question:")
 
-    def rag_chatbot(query):
-        context = retrieve_context(query, top_k=2)
-        return query_llm(query, context)
-
-    # UI
-    user_query = st.text_input("Type your question here:")
-
-    if st.button("Ask the Chatbot"):
+    if st.button("Ask"):
         if user_query.strip() == "":
             st.warning("Please type a question.")
         else:
             with st.spinner("Thinking..."):
-                reply = rag_chatbot(user_query)
-            st.success(reply)
-# Tab 7 – Future Prediction
-with tab7:
-    st.subheader("Future Prediction")
-
-    st.write("Estimate future detection validity by adjusting key features.")
-
-    f_sig = st.slider("Future Signal Strength (sig)", float(X.sig.min()), float(X.sig.max()), float(X.sig.mean()))
-    f_snr = st.slider("Future Signal-to-Noise (snr)", float(X.snr.min()), float(X.snr.max()), float(X.snr.mean()))
-    f_run = st.slider("Expected Run Length (runLen)", float(X.runLen.min()), float(X.runLen.max()), float(X.runLen.mean()))
-
-    future_df = pd.DataFrame([{
-        "sig": f_sig,
-        "sigsd": X.sigsd.median(),
-        "snr": f_snr,
-        "runLen": f_run,
-        "avg_sig_per_tag": X.avg_sig_per_tag.median(),
-        "avg_snr_per_tag": X.avg_snr_per_tag.median(),
-        "detections_per_tag": X.detections_per_tag.median()
-    }])
-
-    future_prob = rf.predict_proba(future_df)[0][1]
-
-    st.write(f"Predicted validity probability: **{future_prob:.2f}**")
-# Tab 8 – Business Impact
-with tab8:
-    st.subheader("Business Impact of the Model")
-
-    total = len(raw_data)
-    valid = raw_data['valid'].sum()
-    noise = total - valid
-
-    st.write(f"Total detections analyzed: **{total}**")
-    st.write(f"Valid detections: **{valid}**")
-    st.write(f"Noise detections removed: **{noise}**")
-
-    st.write("""
-    ### Why this matters:
-    - Removes thousands of noise detections automatically  
-    - Saves researchers 20–40 hours per month of manual cleaning  
-    - Provides cleaner data for migration analysis  
-    - Allows faster decision-making  
-    - Improves accuracy of bird population studies  
-    """)
+                st.success(answer_chatbot(user_query))
