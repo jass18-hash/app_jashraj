@@ -7,3 +7,6 @@ scikit-learn
 openpyxl
 shap
 joblib
+sentence-transformers
+transformers
+torch
