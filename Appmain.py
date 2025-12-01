@@ -300,7 +300,7 @@ with tab5:
 with tab6:
     st.subheader("Bird Dataset Chatbot")
 
-    st.write("Ask anything about the bird detections dataset. The chatbot will use retrieval + FLAN-T5 to answer.")
+    st.write("Ask anything about the bird detections dataset.")
 
     import pandas as pd
     from sentence_transformers import SentenceTransformer, util
@@ -343,7 +343,7 @@ with tab6:
         "doc_narrative": bird_narrative
     }
 
-    embedder = SentenceTransformer('all-MiniLM-L6-v2')
+    embedder = SentenceTransformer('all-MiniLM-L12-v2')
     doc_embeddings = {
         doc_id: embedder.encode(text, convert_to_tensor=True)
         for doc_id, text in documents.items()
@@ -364,7 +364,7 @@ with tab6:
         # Join retrieved documents
         return "\n\n".join(documents[doc_id] for doc_id in top_doc_ids)
 
-    generator = pipeline("text2text-generation", model="google/flan-t5-large")
+    generator = pipeline("text2text-generation", model="google/flan-t5-small")
 
     def query_llm(query, context):
         prompt = (
