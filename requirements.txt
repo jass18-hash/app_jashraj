@@ -10,3 +10,4 @@ joblib
 sentence-transformers
 transformers
 torch
+plotly
