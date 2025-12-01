@@ -320,6 +320,49 @@ with tab6:
 
     df_birds = load_bird_data()
 
+    col_names = list(df_birds.columns)
+    num_cols = len(col_names)
+    num_rows = len(df_birds)
+
+    dataset_summary_doc = (
+        f"The bird dataset contains {num_rows} rows and {num_cols} columns.\n"
+        "Here are the column names:\n"
+        + ", ".join(col_names)
+    )
+
+    # --------------------------
+    # DOCUMENT 2: Column Descriptions
+    # --------------------------
+    column_explanations = {
+        "sig": "Signal strength of the detection.",
+        "sigsd": "Standard deviation of signal strength.",
+        "noise": "Noise level of the signal.",
+        "snr": "Signal-to-noise ratio.",
+        "freq": "Frequency of detection.",
+        "freqsd": "Standard deviation of frequency.",
+        "slop": "Slope of the signal.",
+        "burstSlop": "Burst slope measurement.",
+        "runLen": "Run length of detection.",
+        "avg_sig_per_tag": "Average signal per tag for the bird.",
+        "avg_snr_per_tag": "Average signal-to-noise per tag.",
+        "detections_per_tag": "How many detections belong to that tag.",
+        "motusFilter": "1 = valid detection, 0 = noise."
+    }
+
+    descriptions_doc = "Column descriptions:\n"
+    for col, desc in column_explanations.items():
+        if col in df_birds.columns:
+            descriptions_doc += f"- {col}: {desc}\n"
+
+    narrative_doc = "Here are sample detection rows:\n"
+    sample_df = df_birds.head(10)
+
+    for idx, row in sample_df.iterrows():
+        narrative_doc += (
+            f"Detection {idx}: sig={row['sig']}, snr={row['snr']}, runLen={row['runLen']}, "
+            f"avg_snr_per_tag={row['avg_snr_per_tag']}, detections_per_tag={row['detections_per_tag']}, "
+            f"validity={row['motusFilter']}.\n"
+        )
     bird_narrative = "Here is a summary of bird detections:\n"
 
     # Use first 200 rows for speed
