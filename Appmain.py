@@ -323,7 +323,7 @@ with tab6:
     bird_narrative = "Here is a summary of bird detections:\n"
 
     # Use first 200 rows for speed
-    sample_df = df_birds.head(200)
+    sample_df = df_birds.head(20)
 
     for idx, row in sample_df.iterrows():
         bird_narrative += (
