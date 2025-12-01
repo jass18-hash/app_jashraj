@@ -63,13 +63,15 @@ This application uses a Random Forest model to predict whether a detection is **
 It also explains which features matter and how changing values affects the prediction.
 """)
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "Prediction",
     "Feature Importance and Sensitivity",
     "Model Performance",
     "Dataset Preview",
-    "EDA"
+    "EDA",
+    "Chatbot"
 ])
+
 
 
 
@@ -292,3 +294,108 @@ with tab5:
         plt.yticks(fontsize=9)
     
         st.pyplot(fig)
+
+# TAB 6 — RAG Chatbot (Bird Dataset)
+
+with tab6:
+    st.subheader("Bird Dataset Chatbot")
+
+    st.write("Ask anything about the bird detections dataset. The chatbot will use retrieval + FLAN-T5 to answer.")
+
+    import pandas as pd
+    from sentence_transformers import SentenceTransformer, util
+    from transformers import pipeline
+
+    @st.cache_data
+    def load_bird_data():
+        df_birds = pd.read_excel("F&E_full_dataset.xlsx")
+
+        # Drop useless columns
+        drop_cols = ["Unnamed: 0", "hitID", "runID", "batchID", "ts",
+                     "tsCorrected", "DATE", "TIME", "port", "antBearing"]
+        df_birds = df_birds.drop(columns=[c for c in drop_cols if c in df_birds.columns],
+                                 errors="ignore")
+
+        return df_birds
+
+    df_birds = load_bird_data()
+
+    bird_narrative = "Here is a summary of bird detections:\n"
+
+    # Use first 200 rows for speed
+    sample_df = df_birds.head(200)
+
+    for idx, row in sample_df.iterrows():
+        bird_narrative += (
+            f"Detection: sig={row['sig']}, snr={row['snr']}, runLen={row['runLen']}, "
+            f"avg_snr_per_tag={row['avg_snr_per_tag']}, detections_per_tag={row['detections_per_tag']}. "
+            f"Validity label: {row['motusFilter']}.\n"
+        )
+
+    bird_explanation = (
+        "This dataset contains bird detection events including signal strength (sig), "
+        "signal-to-noise ratio (snr), run length (runLen), and tagging-based averages. "
+        "The 'motusFilter' column is the target label where 1 = valid detection and 0 = noise."
+    )
+
+    documents = {
+        "doc_dataset_summary": bird_explanation,
+        "doc_narrative": bird_narrative
+    }
+
+    embedder = SentenceTransformer('all-MiniLM-L6-v2')
+    doc_embeddings = {
+        doc_id: embedder.encode(text, convert_to_tensor=True)
+        for doc_id, text in documents.items()
+    }
+
+    # Retrieval function
+    def retrieve_context(query, top_k=2):
+        query_embedding = embedder.encode(query, convert_to_tensor=True)
+        scores = {}
+
+        for doc_id, emb in doc_embeddings.items():
+            score = util.pytorch_cos_sim(query_embedding, emb).item()
+            scores[doc_id] = score
+
+        sorted_docs = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+        top_doc_ids = [doc_id for doc_id, score in sorted_docs[:top_k]]
+
+        # Join retrieved documents
+        return "\n\n".join(documents[doc_id] for doc_id in top_doc_ids)
+
+    generator = pipeline("text2text-generation", model="google/flan-t5-large")
+
+    def query_llm(query, context):
+        prompt = (
+            "Below is information about bird detection data. "
+            "Use the context to answer the question clearly.\n\n"
+            f"Context:\n{context}\n\n"
+            f"User Query: {query}\n\n"
+            "Answer in simple words:\n"
+        )
+
+        outputs = generator(prompt, max_new_tokens=200, do_sample=True, temperature=0.7)
+        raw_output = outputs[0]['generated_text']
+
+        # Remove prompt repetition if happens
+        if raw_output.startswith(prompt):
+            raw_output = raw_output[len(prompt):].strip()
+
+        return raw_output.strip()
+
+    def rag_chatbot(query):
+        context = retrieve_context(query, top_k=2)
+        answer = query_llm(query, context)
+        return answer
+    user_query = st.text_input("Type your question here:")
+
+    if st.button("Ask the Chatbot"):
+        if user_query.strip() == "":
+            st.warning("Please type a question.")
+        else:
+            with st.spinner("Analyzing dataset…"):
+                reply = rag_chatbot(user_query)
+
+            st.write("Chatbot Response:")
+            st.success(reply)
